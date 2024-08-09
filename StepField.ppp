@@ -1,0 +1,71 @@
+program CenterFieldStep();
+
+        real            parStep, endParValue;
+        real            min, max, value, newValue, pntValue;
+        int             viewport, i, p, xthing, k;
+        pointer         experimentP, datasetP, TheSet;
+        boolean         ret;
+        int             dimension[8];
+        char            parName[20];
+
+
+        #       Below are the parameters that can be customized         #
+        viewport        = 1;
+        parStep         = 0.1;
+        value           = 3395.9;
+        endParValue     = 3406;
+        strcpy(parName, "CenterField");
+
+
+        #       Get reference to experiment used in desired viewport    #
+        experimentP = aqGetSelectedExp( viewport );
+
+        if (experimentP == NIL)
+
+          printLn("No experiment has been assigned to viewport ", viewport);
+          printLn("Aborting ProDeL program");
+
+          return(FALSE);
+        endif;
+
+        #       Retrieve parameter information                          #
+        i = 0;
+        while (i < 8)
+          dimension[i] = 0;
+          i = i + 1;
+        endwhile;
+
+        min   = aqGetParMinValue(experimentP, parName);
+        max   = aqGetParMaxValue(experimentP, parName);
+      TheSet = create2DDset(FALSE,1096, 100);
+      fillAbscissa(TheSet, X_ABSC, 0,2);
+      fillAbscissa(TheSet, Y_ABSC, 0,2);
+      p = 0;
+      newValue = value;
+      while (p < 100)
+        newValue = newValue + parStep;
+        if (newValue > endParValue or newValue > max)
+          aqMbcStandby(experimentP);
+          printLn("Acquisition/ProDeL program done");
+          printLn;
+          return(TRUE);
+        endif;
+        ret = aqSetRealParValue(experimentP, parName, 8, dimension, newValue);
+        printLn("Running experiment. New parameter value: ", newValue);
+        aqExpRunAndWait(experimentP);
+        datasetP = getCopyOfPrimary;
+        if (datasetP <> NIL)
+          xthing = 0;
+          pntValue = 0;
+          while (xthing < 4096)
+            pntValue =  getValue(datasetP, xthing, REAL_ORD);
+            set2DValue(TheSet, xthing, p, REAL_ORD, pntValue);
+            xthing = xthing + 1;
+          endwhile;
+        endif;
+        p = p + 1;
+     endwhile;
+     setTitle(TheSet, "Again");
+     copyDsetToPrimary(TheSet);
+     k = storeCopyOfDset(TheSet);
+return(TRUE);

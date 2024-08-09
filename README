@@ -1,0 +1,27 @@
+## Initial ProDEL file for SOFFA measurements	
+
+This is a very basic ProDEL file for the Bruker XEPR that allows you to obtain segmented EPR spectra.
+
+#### Basic Usage
+
+On Bruker XEPR:
+
+* Set up a new EPR experiment.
+* Set the number of points to the highest available.
+* Set your sweep time.
+* Set your modulation amplitude.
+* Set your time constant to the lowest available.
+* Set your sweep width to the length of the segmented width.
+
+In the ProDEL file:
+
+* Set the step size in `parStep`
+* Set the first field point in `value`. The field point should be the lowest field minus `parStep`.
+* Set the last field point in `endParValue`.
+
+#### Example
+To set a 0.5 G step with a total field sweep of 100 G from 3250. to 3350 G.
+
+`parStep` = 0.5
+`value` = 3249.5
+`endParValue` = 3350
