@@ -24,4 +24,4 @@ To set a 0.5 G step with a total field sweep of 100 G from 3250. to 3350 G.
 
 `parStep` = 0.5
 `value` = 3249.5
-`endParValue` = 3350
+`endParValue` = 3750 (just set this high, there is a bug that may stop before it is done.)
