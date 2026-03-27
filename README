@@ -7,7 +7,7 @@ This is a very basic ProDEL file for the Bruker XEPR that allows you to obtain s
 On Bruker XEPR:
 
 * Set up a new EPR experiment.
-* Set the number of points to the highest available.
+* Set the number of points to the highest available (8192 is good).
 * Set your sweep time.
 * Set your modulation amplitude.
 * Set your time constant to the lowest available.
