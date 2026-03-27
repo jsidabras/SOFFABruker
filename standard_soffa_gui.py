@@ -390,6 +390,23 @@ def write_processed_dsc(path: Path, params: ProcessingParams, field_axis: np.nda
         handle.write(f"CMNT    'Processed with standard_soffa_gui.py ({params.filter_type})'\n")
 
 
+def compute_noise_region_std(
+    field_axis: np.ndarray, spectrum: np.ndarray, noise_lo: float, noise_hi: float
+) -> tuple[float, int]:
+    """Return std over a chosen field window and the number of points used."""
+    x = np.asarray(field_axis, dtype=np.float64)
+    y = np.asarray(spectrum, dtype=np.float64)
+    if x.size != y.size or x.size == 0:
+        return float("nan"), 0
+    if noise_lo >= noise_hi:
+        return float("nan"), 0
+    mask = np.isfinite(x) & np.isfinite(y) & (x >= noise_lo) & (x <= noise_hi)
+    count = int(np.count_nonzero(mask))
+    if count < 2:
+        return float("nan"), count
+    return float(np.std(y[mask])), count
+
+
 class StandardSoffaApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -455,6 +472,25 @@ class StandardSoffaApp:
 
         for col in range(3):
             params_frame.columnconfigure(col, weight=1)
+
+        analysis_frame = ttk.LabelFrame(outer, text="Analysis", padding=8)
+        analysis_frame.pack(fill="x", pady=(10, 0))
+        ttk.Label(
+            analysis_frame,
+            text="Signal = peak-to-peak of the processed spectrum.",
+            foreground="black",
+        ).pack(anchor="w", pady=(0, 4))
+        noise_frame = ttk.Frame(analysis_frame)
+        noise_frame.pack(fill="x")
+        self.noise_lo_var = tk.StringVar(value="0.0")
+        self.noise_hi_var = tk.StringVar(value="0.0")
+        ttk.Label(noise_frame, text="Noise σ field range B_lo/B_hi (G):").pack(side="left")
+        ttk.Entry(noise_frame, textvariable=self.noise_lo_var, width=10).pack(side="left", padx=(6, 4))
+        ttk.Entry(noise_frame, textvariable=self.noise_hi_var, width=10).pack(side="left", padx=(0, 6))
+        self.noise_region_var = tk.StringVar(
+            value="Set B_lo < B_hi to measure noise σ in that window."
+        )
+        ttk.Label(noise_frame, textvariable=self.noise_region_var, foreground="gray").pack(side="left")
 
         action_frame = ttk.Frame(outer)
         action_frame.pack(fill="x", pady=(10, 8))
@@ -643,20 +679,80 @@ class StandardSoffaApp:
             return
         self.axes.clear()
         self.axes.plot(self.result.field_axis, self.result.spectrum, color="navy", linewidth=1.2)
+        noise_lo, noise_hi = self._get_noise_region()
+        ptp = float(np.ptp(self.result.spectrum))
+        noise_std, noise_count = compute_noise_region_std(
+            self.result.field_axis, self.result.spectrum, noise_lo, noise_hi
+        )
+        if noise_lo < noise_hi:
+            self.axes.axvspan(
+                noise_lo,
+                noise_hi,
+                alpha=0.10,
+                color="tomato",
+                zorder=0,
+                label=f"Noise σ window [{noise_lo:.3f}, {noise_hi:.3f}] G",
+            )
         self.axes.set_xlabel("Field (G)")
         self.axes.set_ylabel("Intensity")
-        self.axes.set_title("Processed spectrum preview")
+        if noise_lo < noise_hi and noise_count >= 2 and np.isfinite(noise_std):
+            if noise_std > 0.0:
+                snr_text = f"SNR = ptp / σ = {ptp / noise_std:.6g}"
+            else:
+                snr_text = "SNR = ptp / σ = undefined (σ = 0)"
+            self.axes.set_title(f"Processed spectrum preview\n{snr_text}")
+        else:
+            self.axes.set_title("Processed spectrum preview\nSNR unavailable: set valid noise σ window")
         self.axes.grid(True, alpha=0.3)
+        if noise_lo < noise_hi:
+            self.axes.legend(loc="best", fontsize=9)
         self.figure.tight_layout()
         self.canvas.draw()
+
+    def _get_noise_region(self) -> tuple[float, float]:
+        try:
+            noise_lo = float(self.noise_lo_var.get().strip())
+            noise_hi = float(self.noise_hi_var.get().strip())
+        except Exception:
+            return 0.0, 0.0
+        if noise_lo >= noise_hi:
+            return 0.0, 0.0
+        return noise_lo, noise_hi
 
     def _update_summary(self) -> None:
         if self.result is None:
             return
+        noise_lo, noise_hi = self._get_noise_region()
+        noise_std, noise_count = compute_noise_region_std(
+            self.result.field_axis, self.result.spectrum, noise_lo, noise_hi
+        )
+        ptp = float(np.ptp(self.result.spectrum))
+        if noise_lo < noise_hi and noise_count >= 2 and np.isfinite(noise_std):
+            self.noise_region_var.set(
+                f"Using {noise_count} pts in [{noise_lo:.3f}, {noise_hi:.3f}] G for noise σ."
+            )
+            noise_line = f"Noise σ [{noise_lo:.6f}, {noise_hi:.6f}] G: {noise_std:.6g}"
+            snr_line = (
+                f"Peak-to-peak / noise σ: {ptp / noise_std:.6g}" if noise_std > 0.0 else
+                "Peak-to-peak / noise σ: undefined (σ = 0)"
+            )
+        elif noise_lo < noise_hi:
+            self.noise_region_var.set(
+                f"Window [{noise_lo:.3f}, {noise_hi:.3f}] G has only {noise_count} valid pts."
+            )
+            noise_line = f"Noise σ [{noise_lo:.6f}, {noise_hi:.6f}] G: insufficient points"
+            snr_line = "Peak-to-peak / noise σ: unavailable"
+        else:
+            self.noise_region_var.set("Set B_lo < B_hi to measure noise σ in that window.")
+            noise_line = "Noise σ: set B_lo < B_hi"
+            snr_line = "Peak-to-peak / noise σ: unavailable"
         lines = [
             f"Output points: {self.result.spectrum.size}",
             f"Field range: {self.result.field_axis[0]:.6f} G to {self.result.field_axis[-1]:.6f} G",
-            f"Peak-to-peak: {np.ptp(self.result.spectrum):.6g}",
+            f"Signal (peak-to-peak): {ptp:.6g}",
+            noise_line,
+            f"Metric: signal = peak-to-peak, noise = σ in the selected field window",
+            snr_line,
             f"Min / Max: {np.min(self.result.spectrum):.6g} / {np.max(self.result.spectrum):.6g}",
             "",
             "Notes:",
